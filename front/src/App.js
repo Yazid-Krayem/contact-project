@@ -103,7 +103,17 @@ class App extends Component {
         name: props.name,
         email: props.email,
       });
+
+      let body = null;
+
+      if(props.image){
+        body = new FormData();
+        body.append(`image`, props.image)
+      }
+
       const response = await fetch(url, {
+        method:'POST', 
+        body,
         headers: { Authorization: `Bearer ${auth0Client.getIdToken()}` }
       });
       const answer = await response.json();
@@ -143,12 +153,22 @@ class App extends Component {
           `you need both name and email properties to create a contact`
         );
       }
-      const { name, email } = props;
+      const { name, email, image } = props;
       const url = makeUrl(`contacts/new`, {
         name,
         email
       });
+      
+      let body = null;
+
+      if(image){
+        body = new FormData();
+        body.append(`image`, image)
+      }
+      
       const response = await fetch(url, {
+        method:'POST', 
+        body,
         headers: { Authorization: `Bearer ${auth0Client.getIdToken()}` }
       });
       const answer = await response.json();
@@ -219,14 +239,16 @@ class App extends Component {
     evt.preventDefault();
     // extract name and email from state
     const { name, email } = this.state;
+    // get the files
+    const image = evt.target.contact_image_input.files[0]
     // create the contact from mail and email
-    this.createContact({ name, email });
+    this.createContact({ name, email, image });
     // empty name and email so the text input fields are reset
     this.setState({ name: "", email: "" });
     this.props.history.push("/");
   };
   renderUser() {
-    const isLoggedIn = auth0Client.isAuthenticated();
+    const isLoggedIn = auth0Client.isAuthenticated() && this.state.user
     if (isLoggedIn) {
       // user is logged in
       return this.renderUserLoggedIn();
@@ -280,6 +302,7 @@ class App extends Component {
         name={contact.name}
         email={contact.email}
         author_id={contact.author_id}
+        image={contact.image}
         updateContact={this.updateContact}
         deleteContact={this.deleteContact}
       />
@@ -311,6 +334,10 @@ class App extends Component {
           onChange={evt => this.setState({ email: evt.target.value })}
           value={this.state.email}
         />
+        <input
+          type="file"
+          name="contact_image_input"
+        />
         <div>
           <input type="submit" value="ok" />
           <input type="reset" value="cancel" className="button" />
@@ -333,18 +360,19 @@ class App extends Component {
       </Switch>
     );
   }
-  isLogging = false;
+  isLogging = false
   login = async () => {
-    if (this.isLogging === true) {
-      return;
+    if( this.isLogging===true ){ 
+      return
     }
-    this.isLogging = true;
+    this.isLogging = true
     try {
       await auth0Client.handleAuthentication();
       await this.getPersonalPageData(); // get the data from our server
       this.props.history.push("/profile");
     } catch (err) {
-      this.isLogging = false;
+      console.error(err)
+      this.isLogging = false
       toast.error(`error from the server: ${err.message}`);
     }
   };

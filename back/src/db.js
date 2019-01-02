@@ -3,12 +3,46 @@ import SQL from "sql-template-strings";
 
 /**
  * returns a date formatted like `YYYY-MM-DD HH:mm:ss.sss`, suitable for sqlite
+ * @returns {string}
  **/
 const nowForSQLite = () =>
   new Date()
     .toISOString()
     .replace("T", " ")
     .replace("Z", "");
+
+/**
+ * 
+ * Joins multiple statements. Useful for `WHERE x = 1 AND y = 2`, where the number of arguments is variable.
+ * 
+ * Usage:
+ * ```js
+ * joinSQLStatementKeys( ["name", "age", "email"], { email:"x@y.c", name="Z"}, ", ")
+ * ```
+ * 
+ * Will return an SQL statement corresponding to the string:
+ * ```js
+ * name="Z", email="x@y.c"
+ * ```
+ * 
+ * @param {Array} keys an array of strings representing the properties you want to join 
+ * @param {Object} values an object containing the values 
+ * @param {string} delimiter a string to join the parts with
+ * @param {string} keyValueSeparator a string to join the parts with
+ * @returns {Statement} an SQL Statement object
+ */
+const joinSQLStatementKeys = (keys, values, delimiter , keyValueSeparator='=') => {
+  return keys
+    .map(propName => {
+      const value = values[propName];
+      if (value !== null && typeof value !== "undefined") {
+        return SQL``.append(propName).append(keyValueSeparator).append(SQL`${value}`);
+      }
+      return false;
+    })
+    .filter(Boolean)
+    .reduce((prev, curr) => prev.append(delimiter).append(curr));
+};
 
 const initializeDatabase = async () => {
   const db = await sqlite.open("./db.sqlite");
@@ -21,18 +55,18 @@ const initializeDatabase = async () => {
 
   /**
    * creates a contact
-   * @param {object} props an object with keys `name`, `email`, and `author_id`
+   * @param {object} props an object with keys `name`, `email`, `image`, and `author_id`
    * @returns {number} the id of the created contact (or an error if things went wrong)
    */
   const createContact = async props => {
-    if (!props || !props.name || !props.email || !props.author_id) {
-      throw new Error(`you must provide a name, an email, and an author_id`);
+    if (!props || !props.name || !props.email || !props.author_id || !props.image) {
+      throw new Error(`you must provide a name, an email, an author_id, and an image`);
     }
-    const { name, email, author_id } = props;
+    const { name, email, author_id, image } = props;
     const date = nowForSQLite();
     try {
       const result = await db.run(
-        SQL`INSERT INTO contacts (name,email, date, author_id) VALUES (${name}, ${email}, ${date}, ${author_id})`
+        SQL`INSERT INTO contacts (name,email, date, image, author_id) VALUES (${name}, ${email}, ${date}, ${image}, ${author_id})`
       );
       const id = result.stmt.lastID;
       return id;
@@ -63,33 +97,43 @@ const initializeDatabase = async () => {
 
   /**
    * Edits a contact
-   * @param {number} id the id of the contact to edit
-   * @param {object} props an object with at least one of `name` or `email`, and `author_id`
+   * @param {number} contact_id the id of the contact to edit
+   * @param {object} props an object with at least one of `name`,`email` or `image`, and `author_id`
    */
-  const updateContact = async (id, props) => {
-    if ((!props || !(props.name || props.email), !props.author_id)) {
-      throw new Error(`you must provide a name, email, and author_id`);
-    }
-    const { name, email, author_id } = props;
-    try {
-      const statement = SQL`UPDATE contacts`;
-      if (name && email) {
-        statement.append(SQL` SET email=${email}, name=${name}`);
-      } else if (name) {
-        statement.append(SQL` SET name=${name}`);
-      } else if (email) {
-        statement.append(SQL` SET email=${email}`);
-      }
-      statement.append(
-        SQL` WHERE contact_id = ${id} AND author_id = ${author_id}`
+  const updateContact = async (contact_id, props) => {
+    if (
+      (!props || !(props.name || props.email || props.image), !props.author_id)
+    ) {
+      throw new Error(
+        `you must provide a name, or email, or image, and an author_id`
       );
+    }
+    try {
+      const previousProps = await getContact(contact_id)
+      const newProps = {...previousProps, ...props }
+      const statement = SQL`UPDATE contacts SET `
+        .append(
+          joinSQLStatementKeys(
+            ["name", "email", "image"],
+            newProps,
+            ", "
+          )
+        )
+        .append(SQL` WHERE `)
+        .append(
+          joinSQLStatementKeys(
+            ["contact_id", "author_id"],
+            { contact_id:contact_id, author_id:props.author_id },
+            " AND "
+          )
+        );
       const result = await db.run(statement);
       if (result.stmt.changes === 0) {
         throw new Error(`no changes were made`);
       }
       return true;
     } catch (e) {
-      throw new Error(`couldn't update the contact ${id}: ` + e.message);
+      throw new Error(`couldn't update the contact ${contact_id}: ` + e.message);
     }
   };
 
@@ -101,7 +145,7 @@ const initializeDatabase = async () => {
   const getContact = async id => {
     try {
       const contactsList = await db.all(
-        SQL`SELECT contact_id AS id, name, email FROM contacts WHERE contact_id = ${id}`
+        SQL`SELECT contact_id AS id, name, email, image, author_id FROM contacts WHERE contact_id = ${id}`
       );
       const contact = contactsList[0];
       if (!contact) {
@@ -136,11 +180,15 @@ const initializeDatabase = async () => {
       ? "1970-01-01 00:00:00.000" // default property is an old date
       : "a"; // otherwise, default property is "a" (for `name` and `email`)
     try {
-      const statement = SQL`SELECT contact_id AS id, name, email, date, author_id FROM contacts WHERE ${orderProperty} > ${startingId}`;
+      const statement = SQL`SELECT contact_id AS id, name, email, date, image, author_id FROM contacts WHERE ${orderProperty} > ${startingId}`;
       if (author_id) {
         statement.append(SQL` AND author_id = ${author_id}`);
       }
-      statement.append( desc? SQL` ORDER BY ${orderProperty} DESC` : SQL` ORDER BY ${orderProperty} ASC`);
+      statement.append(
+        desc
+          ? SQL` ORDER BY ${orderProperty} DESC`
+          : SQL` ORDER BY ${orderProperty} ASC`
+      );
       statement.append(SQL` LIMIT ${limit || 100}`);
       const rows = await db.all(statement);
       return rows;
@@ -160,7 +208,7 @@ const initializeDatabase = async () => {
     );
     if (!answer) {
       await createUser(props);
-      return {...props, firstTime:true }
+      return { ...props, firstTime: true };
     }
     return props;
   };
