@@ -8,10 +8,11 @@ const start = async () => {
   app.get("/", (req, res, next) => res.send("ok"));
 
   // CREATE
-  app.get("/contacts/new", async (req, res, next) => {
+  app.get("/contacts/new", isLoggedIn, async (req, res, next) => {
+    const author_id = req.user.sub
     try {
       const { name, email } = req.query;
-      const result = await controller.createContact({ name, email });
+      const result = await controller.createContact({ name, email, author_id });
       res.json({ success: true, result });
     } catch (e) {
       next(e);
@@ -30,10 +31,11 @@ const start = async () => {
   });
 
   // DELETE
-  app.get("/contacts/delete/:id", async (req, res, next) => {
+  app.get("/contacts/delete/:id", isLoggedIn, async (req, res, next) => {
+    const author_id = req.user.sub
     try {
       const { id } = req.params;
-      const result = await controller.deleteContact(id);
+      const result = await controller.deleteContact({id, author_id});
       res.json({ success: true, result });
     } catch (e) {
       next(e);
@@ -41,11 +43,12 @@ const start = async () => {
   });
 
   // UPDATE
-  app.get("/contacts/update/:id", async (req, res, next) => {
+  app.get("/contacts/update/:id", isLoggedIn, async (req, res, next) => {
+    const author_id = req.user.sub
     try {
       const { id } = req.params;
       const { name, email } = req.query;
-      const result = await controller.updateContact(id, { name, email });
+      const result = await controller.updateContact(id, { name, email, author_id });
       res.json({ success: true, result });
     } catch (e) {
       next(e);
@@ -55,17 +58,25 @@ const start = async () => {
   // LIST
   app.get("/contacts/list", async (req, res, next) => {
     try {
-      const { order } = req.query;
-      const contacts = await controller.getContactsList(order);
+      const { order, desc, limit, start } = req.query;
+      const contacts = await controller.getContactsList({order, desc, limit, start});
       res.json({ success: true, result: contacts });
     } catch (e) {
       next(e);
     }
   });
 
-  app.get('/mypage', isLoggedIn, ( req, res ) => {
-    const username = req.user.name
-    res.send({success:true, result: 'ok, user '+username+' has access to this page'})
+  app.get('/mypage', isLoggedIn, async ( req, res, next ) => {
+    try{
+      const { order, desc, limit, start } = req.query;
+      const { sub: auth0_sub, nickname} = req.user
+      const user = await controller.createUserIfNotExists({auth0_sub, nickname})
+      const contacts = await controller.getContactsList({order, desc, limit, start, author_id:auth0_sub})
+      user.contacts = contacts
+      res.json({ success: true, result: user });
+    }catch(e){
+      next(e)
+    }
   })
   
 
