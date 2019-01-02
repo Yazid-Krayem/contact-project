@@ -1,0 +1,28 @@
+{
+  "name": "contact-project",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "back": "cd back && npm start",
+    "front": "cd front && npm start",
+    "start": "concurrently --kill-others-on-fail --names \"back,front\" \"npm run back\" \"npm run front\"",
+    "postinstall":"cd front && npm install && cd .. && cd back && npm install"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rakon1/contact-project.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/rakon1/contact-project/issues"
+  },
+  "homepage": "https://github.com/rakon1/contact-project#readme",
+  "dependencies": {
+    "concurrently": "^4.1.0",
+    "postinstall": "^0.4.2"
+  }
+}
