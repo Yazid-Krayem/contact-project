@@ -4,14 +4,11 @@ import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import ContactList from "./ContactList";
 import Contact from "./Contact";
-import { pause, makeRequestUrl } from "./utils.js";
 import "./App.css";
 import * as auth0Client from "./auth";
-import IfAuthenticated from './IfAuthenticated'
-import SecuredRoute from './SecuredRoute'
-
-const makeUrl = (path, params) =>
-  makeRequestUrl(`http://localhost:8080/${path}`, params);
+import IfAuthenticated from "./IfAuthenticated";
+import SecuredRoute from "./SecuredRoute";
+import axios from "axios";
 
 class App extends Component {
   state = {
@@ -38,201 +35,134 @@ class App extends Component {
     }
     this.setState({ checkingSession: false });
   }
-  getContact = async id => {
-    // check if we already have the contact
-    const previous_contact = this.state.contacts_list.find(
-      contact => contact.id === id
-    );
-    if (previous_contact) {
-      return; // do nothing, no need to reload a contact we already have
-    }
+  request = async (path, options) => {
     try {
-      const url = makeUrl(`contacts/get/${id}`);
-      const response = await fetch(url, {
-        headers: { Authorization: `Bearer ${auth0Client.getIdToken()}` }
-      });
-      const answer = await response.json();
-      if (answer.success) {
-        // add the user to the current list of contacts
-        const contact = answer.result;
-        const contacts_list = [...this.state.contacts_list, contact];
-        this.setState({ contacts_list });
-        toast(`contact loaded`);
-      } else {
-        this.setState({ error_message: answer.message });
-        toast.error(answer.message);
+      this.setState({ isLoading: true });
+      if(options && options.data){
+        const data = new FormData();
+        Object.keys(options.data).forEach( key => {
+          const value = options.data[key]
+          if(Array.isArray(value) || value instanceof FileList){
+            let i = 0;
+            while(i < value.length){
+              data.append(`${key}[${i}]`, value[i++]);
+            }
+          }else if(value !== null && typeof value !== 'undefined'){
+            data.append(key,value)
+          }
+        })
+        options.data = data
       }
+      const config = {
+        method: "get",
+        url: `//localhost:8080/${path}`,
+        headers: { 
+          Authorization: `Bearer ${auth0Client.getIdToken()}`,
+          'Content-Type': options && options.data ? 'multipart/form-data' : undefined
+        },
+        ...options
+      }
+      const response = await axios(config);
+      const answer = response.data
+      if (answer.success) {
+        this.setState({ isLoading: false });  
+      } else {
+        this.setState({ error_message: answer.message, isLoading: false });
+        toast.error('client error:'+answer.message);
+      }
+      return answer;
     } catch (err) {
-      this.setState({ error_message: err.message });
-      toast.error(err.message);
+      this.setState({ error_message: err.message, isLoading: false });
+      toast.error('server error: '+err.message);
+      return { success:false }
     }
+  };
+  getContact = async id => {
+    if (this.state.contacts_list.find(c => c.id === id)) {
+      return;
+    }
+    const answer = await this.request(`contacts/get`, { params: { id } });
+    if(!answer.success){ return }
+    const contact = answer.result
+    const contacts_list = [...this.state.contacts_list, contact];
+    this.setState({ contacts_list });
+    toast(`contact loaded`);
   };
 
   deleteContact = async id => {
-    try {
-      const url = makeUrl(`contacts/delete/${id}`);
-      const response = await fetch(url, {
-        headers: { Authorization: `Bearer ${auth0Client.getIdToken()}` }
-      });
-      const answer = await response.json();
-      if (answer.success) {
-        // remove the user from the current list of users
-        const contacts_list = this.state.contacts_list.filter(
-          contact => contact.id !== id
-        );
-        this.setState({ contacts_list });
-        toast(`contact deleted`);
-      } else {
-        this.setState({ error_message: answer.message });
-        toast.error(answer.message);
-      }
-    } catch (err) {
-      this.setState({ error_message: err.message });
-      toast.error(err.message);
-    }
+    const answer = await this.request(`contacts/delete/${id}`);
+    if (!answer.success || !answer.result) { return; }
+    const contacts_list = this.state.contacts_list.filter(c => c.id !== id);
+    this.setState({ contacts_list });
+    toast(`contact deleted`);
   };
 
   updateContact = async (id, props) => {
-    try {
-      if (!props || !(props.name || props.email)) {
-        throw new Error(
-          `you need at least name or email properties to update a contact`
-        );
+    const { name, email, image } = props
+    const answer = await this.request(`contacts/update/${id}`, {
+      method: "post",
+      data: { image },
+      params: { name, email }
+    });
+    if (!answer.success) { return; }
+    const contacts_list = this.state.contacts_list.map(contact => {
+      // if this is the contact we need to change, update it. This will apply to exactly
+      // one contact
+      if (contact.id === id) {
+        const new_contact = {
+          id: contact.id,
+          name: name || contact.name,
+          email: email || contact.email
+        };
+        toast(`contact "${new_contact.name}" updated`);
+        return new_contact;
       }
-      const url = makeUrl(`contacts/update/${id}`, {
-        name: props.name,
-        email: props.email,
-      });
-
-      let body = null;
-
-      if(props.image){
-        body = new FormData();
-        body.append(`image`, props.image)
+      // otherwise, don't change the contact at all
+      else {
+        return contact;
       }
-
-      const response = await fetch(url, {
-        method:'POST', 
-        body,
-        headers: { Authorization: `Bearer ${auth0Client.getIdToken()}` }
-      });
-      const answer = await response.json();
-      if (answer.success) {
-        // we update the user, to reproduce the database changes:
-        const contacts_list = this.state.contacts_list.map(contact => {
-          // if this is the contact we need to change, update it. This will apply to exactly
-          // one contact
-          if (contact.id === id) {
-            const new_contact = {
-              id: contact.id,
-              name: props.name || contact.name,
-              email: props.name || contact.email
-            };
-            toast(`contact "${new_contact.name}" updated`);
-            return new_contact;
-          }
-          // otherwise, don't change the contact at all
-          else {
-            return contact;
-          }
-        });
-        this.setState({ contacts_list });
-      } else {
-        this.setState({ error_message: answer.message });
-        toast.error(answer.message);
-      }
-    } catch (err) {
-      this.setState({ error_message: err.message });
-      toast.error(err.message);
-    }
+    });
+    this.setState({ contacts_list });
   };
   createContact = async props => {
-    try {
-      if (!props || !(props.name && props.email)) {
-        throw new Error(
-          `you need both name and email properties to create a contact`
-        );
-      }
-      const { name, email, image } = props;
-      const url = makeUrl(`contacts/new`, {
-        name,
-        email
-      });
-      
-      let body = null;
-
-      if(image){
-        body = new FormData();
-        body.append(`image`, image)
-      }
-      
-      const response = await fetch(url, {
-        method:'POST', 
-        body,
-        headers: { Authorization: `Bearer ${auth0Client.getIdToken()}` }
-      });
-      const answer = await response.json();
-      if (answer.success) {
-        // we reproduce the user that was created in the database, locally
-        const id = answer.result;
-        const contact = { name, email, id };
-        const contacts_list = [...this.state.contacts_list, contact];
-        this.setState({ contacts_list });
-        toast(`contact "${name}" created`);
-      } else {
-        this.setState({ error_message: answer.message });
-        toast.error(answer.message);
-      }
-    } catch (err) {
-      this.setState({ error_message: err.message });
-      toast.error(err.message);
+    if (!props || !(props.name && props.email)) {
+      throw new Error(
+        `you need both name and email properties to create a contact`
+      );
     }
+    const { name, email, image } = props;
+    const answer = await this.request(`contacts/new`, {
+      method:'post',
+      data: { image },
+      params: { name, email }
+    });
+    if (!answer.success) { return; }
+    const id = answer.result;
+    const contact = { name, email, id };
+    const contacts_list = [...this.state.contacts_list, contact];
+    this.setState({ contacts_list });
+    toast(`contact "${name}" created`);
   };
 
   getContactsList = async order => {
-    this.setState({ isLoading: true });
-    try {
-      const url = makeUrl(`contacts/list`, { order });
-      const response = await fetch(url);
-      await pause();
-      const answer = await response.json();
-      if (answer.success) {
-        const contacts_list = answer.result;
-        this.setState({ contacts_list, isLoading: false });
-        toast("contacts loaded");
-      } else {
-        this.setState({ error_message: answer.message, isLoading: false });
-        toast.error(answer.message);
-      }
-    } catch (err) {
-      this.setState({ error_message: err.message, isLoading: false });
-      toast.error(err.message);
-    }
+    const answer = await this.request(`contacts/list`, {
+      params: { order }
+    });
+    if(!answer.success){ return; }
+    const contacts_list = answer.result
+    this.setState({ contacts_list });
+    toast("contacts loaded");
   };
+
   getPersonalPageData = async () => {
-    try {
-      const url = makeUrl(`mypage`);
-      const response = await fetch(url, {
-        headers: { Authorization: `Bearer ${auth0Client.getIdToken()}` }
-      });
-      const answer = await response.json();
-      if (answer.success) {
-        const user = answer.result;
-        this.setState({ user });
-        if (user.firstTime) {
-          toast(`welcome ${user.nickname}! We hope you'll like it here'`);
-        }
-        toast(`hello ${user.nickname}'`);
-      } else {
-        this.setState({ error_message: answer.message });
-        toast.error(
-          `error message received from the server: ${answer.message}`
-        );
-      }
-    } catch (err) {
-      this.setState({ error_message: err.message });
-      toast.error(err.message);
+    const answer = await this.request('mypage')
+    if(!answer.success){ return; }
+    const user = answer.result;
+    this.setState({ user });
+    if (user.firstTime) {
+      toast(`welcome ${user.nickname}! We hope you'll like it here'`);
     }
+    toast(`hello ${user.nickname}'`);
   };
   onSubmit = evt => {
     // stop the form from submitting:
@@ -240,7 +170,7 @@ class App extends Component {
     // extract name and email from state
     const { name, email } = this.state;
     // get the files
-    const image = evt.target.contact_image_input.files[0]
+    const image = evt.target.contact_image_input.files[0];
     // create the contact from mail and email
     this.createContact({ name, email, image });
     // empty name and email so the text input fields are reset
@@ -248,7 +178,7 @@ class App extends Component {
     this.props.history.push("/");
   };
   renderUser() {
-    const isLoggedIn = auth0Client.isAuthenticated() && this.state.user
+    const isLoggedIn = auth0Client.isAuthenticated() && this.state.user;
     if (isLoggedIn) {
       // user is logged in
       return this.renderUserLoggedIn();
@@ -334,10 +264,7 @@ class App extends Component {
           onChange={evt => this.setState({ email: evt.target.value })}
           value={this.state.email}
         />
-        <input
-          type="file"
-          name="contact_image_input"
-        />
+        <input type="file" name="contact_image_input" />
         <div>
           <input type="submit" value="ok" />
           <input type="reset" value="cancel" className="button" />
@@ -360,19 +287,19 @@ class App extends Component {
       </Switch>
     );
   }
-  isLogging = false
+  isLogging = false;
   login = async () => {
-    if( this.isLogging===true ){ 
-      return
+    if (this.isLogging === true) {
+      return;
     }
-    this.isLogging = true
+    this.isLogging = true;
     try {
       await auth0Client.handleAuthentication();
       await this.getPersonalPageData(); // get the data from our server
       this.props.history.push("/profile");
     } catch (err) {
-      console.error(err)
-      this.isLogging = false
+      console.error(err);
+      this.isLogging = false;
       toast.error(`error from the server: ${err.message}`);
     }
   };
@@ -384,8 +311,7 @@ class App extends Component {
     return (
       <div className="App">
         <div>
-          <Link to="/">Home</Link> |
-          <Link to="/profile">profile</Link> |
+          <Link to="/">Home</Link> |<Link to="/profile">profile</Link> |
           <IfAuthenticated>
             <Link to="/create">create</Link>
           </IfAuthenticated>

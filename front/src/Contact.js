@@ -14,7 +14,6 @@ export default class Contact extends React.Component {
     const isLoggedIn = auth0Client.isAuthenticated();
     const current_logged_in_user_id = isLoggedIn && auth0Client.getProfile().sub
     const is_author = author_id === current_logged_in_user_id
-    console.log(author_id, current_logged_in_user_id)
     return (
       <div>
         { image && <img src={`//localhost:8080/images/${image}`} alt={`the avatar of ${name}`}/> }
