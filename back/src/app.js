@@ -5,6 +5,7 @@ import favicon from 'serve-favicon' // serves favicon
 import cors from 'cors' // allows cross-domain requests
 import createError from 'http-errors' // better JS errors
 import path from 'path'
+import helmet from 'helmet'
 
 const app = express(); // create a new app
 
@@ -14,6 +15,7 @@ if (IS_PRODUCTION) {
   app.set('trust proxy', 1) // secures the app if it is running behind Nginx/Apache/similar
 }
 
+app.use(helmet())
 app.use(cors()) // allows cross domain requests
 app.use(express.json()); // allows POST requests with JSON
 app.use(express.urlencoded({ extended: false })); // allows POST requests with GET-like parameters

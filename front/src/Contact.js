@@ -9,11 +9,11 @@ export default class Contact extends React.Component {
     this.setState({ editMode });
   };
   renderViewMode() {
-    const { id, name, email, deleteContact } = this.props;
+    const { id, name, deleteContact } = this.props;
     return (
       <div>
         <span>
-          {id} - {name} - {email}
+          {id} - {name}
         </span>
         <button onClick={this.toggleEditMode} className="success">
           edit

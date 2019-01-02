@@ -1,5 +1,6 @@
 import app from "./app";
 import initializeDatabase from "./db";
+import { authenticateUser, logout, isLoggedIn } from './auth'
 
 const start = async () => {
   const controller = await initializeDatabase();
@@ -61,6 +62,12 @@ const start = async () => {
       next(e);
     }
   });
+
+  app.get('/mypage', isLoggedIn, ( req, res ) => {
+    const username = req.user.name
+    res.send({success:true, result: 'ok, user '+username+' has access to this page'})
+  })
+  
 
   // ERROR
   app.use((err, req, res, next) => {

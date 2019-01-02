@@ -1,11 +1,15 @@
 import React, { Component } from "react";
-import { Route, withRouter, Switch, Link } from "react-router-dom";
+import { withRouter, Route, Switch, Link } from "react-router-dom";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import ContactList from "./ContactList";
 import Contact from "./Contact";
-import { pause } from "./utils.js";
+import { pause, makeRequestUrl } from "./utils.js";
 import "./App.css";
+import * as auth0Client from "./auth";
+
+const makeUrl = (path, params) =>
+  makeRequestUrl(`http://localhost:8080/${path}`, params);
 
 class App extends Component {
   state = {
@@ -13,8 +17,26 @@ class App extends Component {
     error_message: "",
     name: "",
     email: "",
-    isLoading: false
+    isLoading: false,
+    checkingSession: true
   };
+  async componentDidMount() {
+    this.getContactsList();
+    if (this.props.location.pathname === "/callback") {
+      this.setState({checkingSession:false});
+      return;
+    }
+    try {
+      await auth0Client.silentAuth();
+      await this.getPersonalPageData(); // get the data from our server
+      this.forceUpdate();
+    } catch (err) {
+      if (err.error !== "login_required") {
+        console.log(err.error);
+      }
+    }
+    this.setState({checkingSession:false});
+  }
   getContact = async id => {
     // check if we already have the contact
     const previous_contact = this.state.contacts_list.find(
@@ -24,7 +46,8 @@ class App extends Component {
       return; // do nothing, no need to reload a contact we already have
     }
     try {
-      const response = await fetch(`http://localhost:8080/contacts/get/${id}`);
+      const url = makeUrl(`contacts/get/${id}`);
+      const response = await fetch(url);
       const answer = await response.json();
       if (answer.success) {
         // add the user to the current list of contacts
@@ -38,15 +61,14 @@ class App extends Component {
       }
     } catch (err) {
       this.setState({ error_message: err.message });
-      toast.error(err.message); // <--- show a toaster
+      toast.error(err.message);
     }
   };
 
   deleteContact = async id => {
     try {
-      const response = await fetch(
-        `http://localhost:8080/contacts/delete/${id}`
-      );
+      const url = makeUrl(`contacts/delete/${id}`);
+      const response = await fetch(url);
       const answer = await response.json();
       if (answer.success) {
         // remove the user from the current list of users
@@ -61,7 +83,7 @@ class App extends Component {
       }
     } catch (err) {
       this.setState({ error_message: err.message });
-      toast.error(err.message); // <--- show a toaster
+      toast.error(err.message);
     }
   };
 
@@ -72,11 +94,11 @@ class App extends Component {
           `you need at least name or email properties to update a contact`
         );
       }
-      const response = await fetch(
-        `http://localhost:8080/contacts/update/${id}?name=${props.name}&email=${
-          props.email
-        }`
-      );
+      const url = makeUrl(`contacts/update/${id}`, {
+        name: props.name,
+        email: props.email,
+      });
+      const response = await fetch(url);
       const answer = await response.json();
       if (answer.success) {
         // we update the user, to reproduce the database changes:
@@ -104,7 +126,7 @@ class App extends Component {
       }
     } catch (err) {
       this.setState({ error_message: err.message });
-      toast.error(err.message); // <--- show a toaster
+      toast.error(err.message);
     }
   };
   createContact = async props => {
@@ -115,9 +137,11 @@ class App extends Component {
         );
       }
       const { name, email } = props;
-      const response = await fetch(
-        `http://localhost:8080/contacts/new/?name=${name}&email=${email}`
-      );
+      const url = makeUrl(`contacts/new`, {
+        name,
+        email,
+      });
+      const response = await fetch(url);
       const answer = await response.json();
       if (answer.success) {
         // we reproduce the user that was created in the database, locally
@@ -139,27 +163,45 @@ class App extends Component {
   getContactsList = async order => {
     this.setState({ isLoading: true });
     try {
-      const response = await fetch(
-        `http://localhost:8080/contacts/list?order=${order}`
-      );
+      const url = makeUrl(`contacts/list`, { order });
+      const response = await fetch(url);
       await pause();
       const answer = await response.json();
       if (answer.success) {
         const contacts_list = answer.result;
         this.setState({ contacts_list, isLoading: false });
-        toast("contacts loaded"); // <--- Show a toaster
+        toast("contacts loaded");
       } else {
         this.setState({ error_message: answer.message, isLoading: false });
-        toast.error(answer.message); // <--- show a toaster
+        toast.error(answer.message);
       }
     } catch (err) {
       this.setState({ error_message: err.message, isLoading: false });
-      toast.error(err.message); // <--- show a toaster
+      toast.error(err.message);
     }
   };
-  componentDidMount() {
-    this.getContactsList();
-  }
+  getPersonalPageData = async () => {
+    try {
+      const url = makeUrl(`mypage`);
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${auth0Client.getIdToken()}` }
+      });
+      const answer = await response.json();
+      if (answer.success) {
+        const message = answer.result;
+        // we should see: "received from the server: 'ok, user <username> has access to this page'"
+        toast(`received from the server: '${message}'`);
+      } else {
+        this.setState({ error_message: answer.message });
+        toast.error(
+          `error message received from the server: ${answer.message}`
+        );
+      }
+    } catch (err) {
+      this.setState({ error_message: err.message });
+      toast.error(err.message);
+    }
+  };
   onSubmit = evt => {
     // stop the form from submitting:
     evt.preventDefault();
@@ -171,6 +213,34 @@ class App extends Component {
     this.setState({ name: "", email: "" });
     this.props.history.push('/')
   };
+  renderUser() {
+    const isLoggedIn = auth0Client.isAuthenticated();
+    if (isLoggedIn) {
+      // user is logged in
+      return this.renderUserLoggedIn();
+    } else {
+      return this.renderUserLoggedOut();
+    }
+  }
+  renderUserLoggedOut() {
+    return <button onClick={auth0Client.signIn}>Sign In</button>;
+  }
+  renderUserLoggedIn() {
+    const nick = auth0Client.getProfile().name;
+    return (
+      <div>
+        Hello, {nick}!{" "}
+        <button
+          onClick={() => {
+            auth0Client.signOut();
+            this.setState({});
+          }}
+        >
+          logout
+        </button>
+      </div>
+    );
+  }
   renderHomePage = () => {
     const { contacts_list } = this.state;
     return <ContactList contacts_list={contacts_list} />;
@@ -195,7 +265,15 @@ class App extends Component {
     );
   };
   renderProfilePage = () => {
-    return <div>profile page</div>;
+    if(this.state.checkingSession){
+      return <p>validating session...</p>
+    }
+    return (
+      <div>
+        <p>profile page</p>
+        {this.renderUser()}
+      </div>
+    );
   };
   renderCreateForm = () => {
     return (
@@ -232,10 +310,32 @@ class App extends Component {
         <Route path="/contact/:id" render={this.renderContactPage} />
         <Route path="/profile" render={this.renderProfilePage} />
         <Route path="/create" render={this.renderCreateForm} />
+        <Route path="/callback" render={this.handleAuthentication} />
         <Route render={() => <div>not found!</div>} />
       </Switch>
     );
   }
+  isLogging = false;
+  login = async () => {
+    if (this.isLogging === true) {
+      return;
+    }
+    this.isLogging = true;
+    try {
+      await auth0Client.handleAuthentication();
+      const name = auth0Client.getProfile().name; // get the data from Auth0
+      await this.getPersonalPageData(); // get the data from our server
+      toast(`${name} is logged in`);
+      this.props.history.push("/profile");
+    } catch (err) {
+      this.isLogging = false
+      toast.error(`error from the server: ${err.message}`);
+    }
+  };
+  handleAuthentication = () => {
+    this.login();
+    return <p>wait...</p>;
+  };
   render() {
     return (
       <div className="App">
