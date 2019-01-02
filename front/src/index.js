@@ -3,6 +3,12 @@ import ReactDOM from 'react-dom';
 import './index.css';
 import App from './App';
 import * as serviceWorker from './serviceWorker';
+import "picnic/picnic.min.css";
+
+fetch('//localhost:8080/contacts/list')
+  .then( response => response.text() )
+  .then( text => console.log("we got a response!!",text))
+
 
 ReactDOM.render(<App />, document.getElementById('root'));
 
