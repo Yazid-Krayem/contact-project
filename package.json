@@ -12,15 +12,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rakon1/contact-project.git"
+    "url": "git+https://github.com/Yazid-Krayem/contact-project.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/rakon1/contact-project/issues"
+    "url": "https://github.com/Yazid-Krayem/contact-project/issues"
   },
-  "homepage": "https://github.com/rakon1/contact-project#readme",
+  "homepage": "https://github.com/Yazid-Krayem/contact-project#readme",
   "dependencies": {
     "concurrently": "^4.1.0",
     "postinstall": "^0.4.2"
